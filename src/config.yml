@@ -1,0 +1,97 @@
+# ========================== 汎用ガチャ設定 ==========================
+# 使い方:  /gacha preset <id>   … presets.<id> を1回抽選
+#          /gacha list          … プリセット一覧
+#          /gacha reload        … この config.yml を再読み込み
+#
+# 抽選の流れ:
+#   0) ガチャ名（presets.<id>.name）を数秒間タイトル表示（何のガチャか分かるように）
+#   1) スロット風アニメ（animation.roll-seconds 秒、画面中央にランダム表示）
+#   2) レア度ランク（例: SSR）を大きく表示
+#   3) 当選した中身を表示して commands を実行
+# ====================================================================
+
+animation:
+  roll-seconds: 3            # スロット回転の秒数（0 でアニメ無し・即ランク→中身表示）
+  name-title-seconds: 2      # 抽選開始前にガチャ名を表示する秒数（0 で表示しない）
+  name-title-color: gold     # ガチャ名タイトルの色。下記カラー名から指定。
+  # 使えるカラー名: black, dark_blue, dark_green, dark_aqua, dark_red, dark_purple,
+  #   gold, gray, dark_gray, blue, green, aqua, red, light_purple, yellow, white
+  # ※ preset ごとに presets.<id>.name-color を入れるとそのガチャだけ色を上書きできます。
+
+# 当選アナウンス（全体チャット）。使えるプレースホルダ:
+#   %player% … 実行者名 / %name% … 当選名 / %rank% … ランク(SSR等) / %stars% … ⭐文字列
+#   %presets%(=%preset%) … ガチャ名（presets.<id>.name。例: タイマーガチャ）
+messages:
+  win: "§6[%presets%] §e[%rank%] %name% §6を当選"
+
+# -------------------------------------------------------------------
+# レア度ランク（5段階）。各エントリの「当選確率(%)」から自動で決まります。
+#   当選確率 = そのエントリの weight ÷ プリセット内 weight 合計 × 100
+# 判定は max-chance（その確率%以下ならそのランク）。確率が低いほど高ランク。
+#   stars … 表示する⭐の数（N=1。3個=HR からレア感が出る並びにしています）
+#   color … タイトル色（GOLD, LIGHT_PURPLE, AQUA, GREEN, GRAY, RED, YELLOW, WHITE 等）
+# 例) 当選確率0.5% → SSR(⭐5) / 3% → SR(⭐4) / 12% → HR(⭐3) / 30% → R(⭐2) / 70% → N(⭐1)
+# -------------------------------------------------------------------
+rarity-tiers:
+  - rank: "SSR"
+    max-chance: 1.0      # 1%以下
+    stars: 5
+    color: "GOLD"
+  - rank: "SR"
+    max-chance: 5.0      # 5%以下
+    stars: 4
+    color: "LIGHT_PURPLE"
+  - rank: "HR"
+    max-chance: 15.0     # 15%以下
+    stars: 3
+    color: "AQUA"
+  - rank: "R"
+    max-chance: 40.0     # 40%以下
+    stars: 2
+    color: "GREEN"
+  - rank: "N"
+    max-chance: 100.0    # それ以外（一番出やすい）
+    stars: 1
+    color: "GRAY"
+
+# -------------------------------------------------------------------
+# プリセットとエントリの書き方
+#   presets:
+#     '1':                 ← プリセットID。/gacha preset 1 の "1"。'文字'でも数字でも可
+#       name: "表示名"      ← /gacha list 用の説明（任意）
+#       entries:
+#         apple:           ← ★エントリキー。任意の半角英数字でOK。"このプリセット内で
+#                             重複しなければ何でも良い"。どこにも別途登録は不要。
+#                             name を省略した場合は、このキーが表示名として使われます。
+#           name: "りんご当たり"   ← 画面に出る当選名（省略時はキー名"apple"が使われる）
+#           weight: 30.0          ← 相対確率。合計に対する比率で当選率が決まる
+#           commands:             ← 当選時にコンソール権限で実行されるコマンド（複数可）
+#             - "give %player% apple 5"   ← %player% は実行者名に置換される
+#
+#   ※ レア度(rank/⭐)は weight から自動算出されるので、エントリ側に rarity は不要です。
+# -------------------------------------------------------------------
+presets:
+  '1':
+    name: "サンプルガチャ"
+    entries:
+      diamond:                     # ← 任意のキー（例: diamond）。一意ならOK
+        name: "ダイヤ大当たり"
+        weight: 3.0                # 合計138なので約2.2% → SR想定
+        commands:
+          - "give %player% diamond 3"
+          - "title %player% title {\"text\":\"大当たり!\",\"color\":\"gold\"}"
+      iron:
+        name: "鉄セット"
+        weight: 15.0               # 約10.9% → HR想定
+        commands:
+          - "give %player% iron_ingot 8"
+      apple:
+        name: "りんご当たり"
+        weight: 30.0               # 約21.7% → R想定
+        commands:
+          - "give %player% apple 5"
+      nothing:
+        name: "はずれ"
+        weight: 90.0               # 約65.2% → N想定
+        commands:
+          - "title %player% actionbar {\"text\":\"はずれ...\",\"color\":\"gray\"}"

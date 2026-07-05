@@ -1,0 +1,14 @@
+name: CommonGacha
+version: '1.5.0'
+main: com.liverecord.gacha.GachaPlugin
+api-version: '1.21'
+author: LiveRecord
+description: '汎用ガチャ。プリセットを重み付き抽選しコマンドを実行する'
+commands:
+  gacha:
+    description: '汎用ガチャ（プリセット抽選しコマンド実行）'
+    usage: '/gacha preset <id> | list | reload | test <1-5> | force <preset> <key>'
+permissions:
+  gacha.use:
+    description: 'gacha 実行の権限'
+    default: op
