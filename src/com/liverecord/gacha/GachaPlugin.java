@@ -10,9 +10,12 @@ import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.title.Title;
+import net.kyori.adventure.util.HSVLike;
 import org.bukkit.Bukkit;
 import org.bukkit.Color;
 import org.bukkit.FireworkEffect;
@@ -45,7 +48,10 @@ import org.bukkit.plugin.java.JavaPlugin;
  * <p>エントリに {@code chain: '<presetId>'} を書くと、当選後に指定プリセットを
  * 自動で連続抽選する（倍々ガチャ等の多段演出用）。</p>
  *
- * @version 1.7.0
+ * <p>レア度色に {@code RAINBOW} を指定すると、タイトルが1文字ずつ色相をずらした
+ * 虹色グラデーションで、色が流れるアニメーション表示になる（UR 用）。</p>
+ *
+ * @version 1.8.0
  * @author LiveRecord
  */
 public final class GachaPlugin extends JavaPlugin {
@@ -93,6 +99,9 @@ public final class GachaPlugin extends JavaPlugin {
     /** パーティクルの速度。 */
     private static final double PARTICLE_SPEED = 0.4;
 
+    /** 星6（UR）当選時の花火発数。 */
+    private static final int FIREWORK_BURST_STAR6 = 5;
+
     /** 星5当選時の花火発数。 */
     private static final int FIREWORK_BURST_STAR5 = 3;
 
@@ -107,6 +116,42 @@ public final class GachaPlugin extends JavaPlugin {
 
     /** 星4花火の色（紫）。 */
     private static final Color FIREWORK_COLOR_PURPLE = Color.fromRGB(0xC850FF);
+
+    /** 星6（UR）花火の色（虹7色）。 */
+    private static final Color[] FIREWORK_COLORS_RAINBOW = {
+            Color.fromRGB(0xFF3030),  // 赤
+            Color.fromRGB(0xFF8C00),  // 橙
+            Color.fromRGB(0xFFE930),  // 黄
+            Color.fromRGB(0x30E030),  // 緑
+            Color.fromRGB(0x30D0FF),  // 水
+            Color.fromRGB(0x4060FF),  // 青
+            Color.fromRGB(0xC850FF),  // 紫
+    };
+
+    // ── 虹色（RAINBOW）演出定数 ──
+
+    /** 虹色アニメの1フレームあたりの tick 数。 */
+    private static final long RAINBOW_FRAME_TICKS = 2L;
+
+    /** 虹色アニメの1フレームの表示時間（ミリ秒）。フレーム間隔より長くして途切れを防ぐ。 */
+    private static final long RAINBOW_FRAME_STAY_MS = 500L;
+
+    /** 虹色グラデの1文字あたりの色相ステップ（0〜1）。 */
+    private static final float RAINBOW_HUE_STEP = 0.09f;
+
+    /** 虹色アニメの1フレームあたりの色相シフト（0〜1）。色が右→左へ流れて見える。 */
+    private static final float RAINBOW_HUE_SHIFT_PER_FRAME = 0.05f;
+
+    /** 虹色の彩度（0〜1）。1.0 より少し落とすと Minecraft のタイトルで読みやすい。 */
+    private static final float RAINBOW_SATURATION = 0.85f;
+
+    /** 虹色の明度（0〜1）。 */
+    private static final float RAINBOW_VALUE = 1.0f;
+
+    /** チャット（レガシー§コード）用の虹色コード列。%rank% の虹色置換に使う。 */
+    private static final String[] RAINBOW_LEGACY_CODES = {
+            "§c", "§6", "§e", "§a", "§b", "§9", "§d",
+    };
 
     // ── 音量・ピッチ定数 ──
 
@@ -142,7 +187,10 @@ public final class GachaPlugin extends JavaPlugin {
     private static final int STARS_MIN = 1;
 
     /** 星数の最大値。 */
-    private static final int STARS_MAX = 5;
+    private static final int STARS_MAX = 6;
+
+    /** UR（最高レア）判定しきい値（星6以上）。花火が虹色になる。 */
+    private static final int STARS_UR = 6;
 
     /** 高レアサウンド判定しきい値（星5以上）。 */
     private static final int SOUND_THRESHOLD_HIGH = 5;
@@ -155,6 +203,9 @@ public final class GachaPlugin extends JavaPlugin {
 
     /** ms/秒変換係数。 */
     private static final long MS_PER_SECOND = 1000L;
+
+    /** ms/tick変換係数。 */
+    private static final long MS_PER_TICK = MS_PER_SECOND / TICKS_PER_SECOND;
 
     // ── レア度ランクデータクラス ──
 
@@ -174,15 +225,20 @@ public final class GachaPlugin extends JavaPlugin {
         /** 表示する星の数。 */
         final int stars;
 
-        /** タイトル表示色。 */
+        /** タイトル表示色（rainbow=true の場合は未使用）。 */
         final NamedTextColor color;
 
+        /** 虹色（RAINBOW）表示かどうか。true なら虹グラデ＋アニメで表示する。 */
+        final boolean rainbow;
+
         Tier(final String rank, final double maxChance,
-             final int stars, final NamedTextColor color) {
+             final int stars, final NamedTextColor color,
+             final boolean rainbow) {
             this.rank = rank;
             this.maxChance = maxChance;
             this.stars = stars;
             this.color = color;
+            this.rainbow = rainbow;
         }
     }
 
@@ -319,7 +375,7 @@ public final class GachaPlugin extends JavaPlugin {
         }
         if (args.length == 2 && isTestSubCommand(args[0])) {
             return filterPrefix(
-                    Arrays.asList("1", "2", "3", "4", "5"), args[1]);
+                    Arrays.asList("1", "2", "3", "4", "5", "6"), args[1]);
         }
         if (args.length == 3 && args[0].equalsIgnoreCase(SUB_FORCE)) {
             return filterPrefix(getEntryKeys(args[1]), args[2]);
@@ -370,14 +426,14 @@ public final class GachaPlugin extends JavaPlugin {
     private boolean handleTest(final CommandSender sender, final String[] args) {
         if (args.length < 2) {
             sender.sendMessage(
-                    "§7使い方: /gacha test <1-5>  （星ランクの演出だけを確認）");
+                    "§7使い方: /gacha test <1-6>  （星ランクの演出だけを確認）");
             return true;
         }
         final Integer starCount = parseIntOrNull(args[1]);
         if (starCount == null || starCount < STARS_MIN || starCount > STARS_MAX) {
             sender.sendMessage(
-                    "§c星は 1〜5 で指定してください"
-                    + "（5=HR, 4=SSR, 3=SR, 2=R, 1=N 相当）。");
+                    "§c星は 1〜6 で指定してください"
+                    + "（6=UR, 5=HR, 4=SSR, 3=SR, 2=R, 1=N 相当）。");
             return true;
         }
         runPreview(sender, starCount);
@@ -409,7 +465,7 @@ public final class GachaPlugin extends JavaPlugin {
      */
     private void sendUsage(final CommandSender sender) {
         sender.sendMessage(
-                "§7使い方: /gacha preset <id> | list | reload | test <1-5>"
+                "§7使い方: /gacha preset <id> | list | reload | test <1-6>"
                 + " | force <preset> <key>");
     }
 
@@ -794,13 +850,20 @@ public final class GachaPlugin extends JavaPlugin {
             final Tier tier = tierFor(chance, tiers);
             final String name = e.getString("name", key);
             // 回転中は星もレア度色で表示（結果表示の星は黄色のまま）
-            showInstantTitle(
-                    Component.text(name)
-                            .color(tier.color)
-                            .decorate(TextDecoration.BOLD),
-                    Component.text(buildStarString(tier.stars))
-                            .color(tier.color),
-                    SLOT_DISPLAY_MS);
+            if (tier.rainbow) {
+                showInstantTitle(
+                        rainbowText(name, 0, true),
+                        rainbowText(buildStarString(tier.stars), 0, false),
+                        SLOT_DISPLAY_MS);
+            } else {
+                showInstantTitle(
+                        Component.text(name)
+                                .color(tier.color)
+                                .decorate(TextDecoration.BOLD),
+                        Component.text(buildStarString(tier.stars))
+                                .color(tier.color),
+                        SLOT_DISPLAY_MS);
+            }
         }
         playSoundForAll(Sound.BLOCK_NOTE_BLOCK_HAT, 0.7f, 1.2f);
 
@@ -851,12 +914,18 @@ public final class GachaPlugin extends JavaPlugin {
         final Tier tier = tierFor(chance, tiers);
         final String starStr = buildStarString(tier.stars);
 
-        showInstantTitle(
-                Component.text(tier.rank)
-                        .color(tier.color)
-                        .decorate(TextDecoration.BOLD),
-                Component.text(starStr).color(NamedTextColor.YELLOW),
-                RANK_DISPLAY_MS);
+        if (tier.rainbow) {
+            // 当選表示（revealWinner）に被せないよう、遷移までの時間でアニメを打ち切る
+            showRainbowTitle(tier.rank, starStr,
+                    RANK_TO_WIN_DELAY_TICKS * MS_PER_TICK);
+        } else {
+            showInstantTitle(
+                    Component.text(tier.rank)
+                            .color(tier.color)
+                            .decorate(TextDecoration.BOLD),
+                    Component.text(starStr).color(NamedTextColor.YELLOW),
+                    RANK_DISPLAY_MS);
+        }
         playSoundForAll(Sound.BLOCK_NOTE_BLOCK_BELL,
                 1.0f, pitchByStars(tier.stars));
 
@@ -889,20 +958,25 @@ public final class GachaPlugin extends JavaPlugin {
         final String starStr = buildStarString(tier.stars);
 
         // 当選タイトル表示（サブタイトルは星のみ・ランク表記なし）
-        final Component main = Component.text(displayName)
-                .color(tier.color)
-                .decorate(TextDecoration.BOLD);
-        final Component sub = Component.text(starStr)
-                .color(NamedTextColor.YELLOW);
-        final Title.Times times = Title.Times.times(
-                Duration.ofMillis(WIN_FADE_IN_MS),
-                Duration.ofMillis(WIN_STAY_MS),
-                Duration.ofMillis(WIN_FADE_OUT_MS));
-        final Title title = Title.title(main, sub, times);
         final Sound winSnd = winSound(tier.stars);
-
+        if (tier.rainbow) {
+            showRainbowTitle(displayName, starStr, WIN_STAY_MS);
+        } else {
+            final Component main = Component.text(displayName)
+                    .color(tier.color)
+                    .decorate(TextDecoration.BOLD);
+            final Component sub = Component.text(starStr)
+                    .color(NamedTextColor.YELLOW);
+            final Title.Times times = Title.Times.times(
+                    Duration.ofMillis(WIN_FADE_IN_MS),
+                    Duration.ofMillis(WIN_STAY_MS),
+                    Duration.ofMillis(WIN_FADE_OUT_MS));
+            final Title title = Title.title(main, sub, times);
+            for (final Player p : Bukkit.getOnlinePlayers()) {
+                p.showTitle(title);
+            }
+        }
         for (final Player p : Bukkit.getOnlinePlayers()) {
-            p.showTitle(title);
             p.playSound(p.getLocation(), winSnd, 1.0f, 1.0f);
         }
         playRarityEffect(tier.stars);
@@ -989,10 +1063,15 @@ public final class GachaPlugin extends JavaPlugin {
         final String presetName = getConfig().getString(
                 "presets." + presetId + ".name", presetId);
 
+        // 虹色レア（UR等）の %rank% はチャットでも1文字ずつ虹色にする
+        final String rankStr = tier.rainbow
+                ? rainbowLegacy(tier.rank)
+                : tier.rank;
+
         Bukkit.broadcastMessage(announce
                 .replace("%presets%", presetName)
                 .replace("%preset%", presetName)
-                .replace("%rank%", tier.rank)
+                .replace("%rank%", rankStr)
                 .replace("%name%", displayName)
                 .replace("%player%", playerName)
                 .replace("%stars%", starStr));
@@ -1028,8 +1107,8 @@ public final class GachaPlugin extends JavaPlugin {
     /**
      * 高レア度（星4以上）の当選時に花火とパーティクルを発生させる。
      *
-     * <p>星5: 3発・金色・STAR型、星4: 1発・紫・BALL_LARGE型。
-     * 星3以下では演出なし。</p>
+     * <p>星6（UR）: 5発・虹7色・STAR型、星5: 3発・金色・STAR型、
+     * 星4: 1発・紫・BALL_LARGE型。星3以下では演出なし。</p>
      *
      * @param stars 当選の星数
      */
@@ -1038,15 +1117,22 @@ public final class GachaPlugin extends JavaPlugin {
             return;
         }
 
-        final int bursts = (stars >= SOUND_THRESHOLD_HIGH)
-                ? FIREWORK_BURST_STAR5
-                : FIREWORK_BURST_STAR4;
-        final Color mainColor = (stars >= SOUND_THRESHOLD_HIGH)
-                ? FIREWORK_COLOR_GOLD
-                : FIREWORK_COLOR_PURPLE;
-        final FireworkEffect.Type type = (stars >= SOUND_THRESHOLD_HIGH)
-                ? FireworkEffect.Type.STAR
-                : FireworkEffect.Type.BALL_LARGE;
+        final int bursts;
+        final Color[] colors;
+        final FireworkEffect.Type type;
+        if (stars >= STARS_UR) {
+            bursts = FIREWORK_BURST_STAR6;
+            colors = FIREWORK_COLORS_RAINBOW;
+            type = FireworkEffect.Type.STAR;
+        } else if (stars >= SOUND_THRESHOLD_HIGH) {
+            bursts = FIREWORK_BURST_STAR5;
+            colors = new Color[] {FIREWORK_COLOR_GOLD};
+            type = FireworkEffect.Type.STAR;
+        } else {
+            bursts = FIREWORK_BURST_STAR4;
+            colors = new Color[] {FIREWORK_COLOR_PURPLE};
+            type = FireworkEffect.Type.BALL_LARGE;
+        }
 
         for (final Player p : Bukkit.getOnlinePlayers()) {
             p.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING,
@@ -1058,7 +1144,7 @@ public final class GachaPlugin extends JavaPlugin {
                     Sound.ENTITY_FIREWORK_ROCKET_LAUNCH, 1.0f, 1.0f);
 
             for (int i = 0; i < bursts; i++) {
-                spawnFirework(p, mainColor, type);
+                spawnFirework(p, type, colors);
             }
         }
     }
@@ -1066,18 +1152,18 @@ public final class GachaPlugin extends JavaPlugin {
     /**
      * プレイヤーの位置に花火を1発打ち上げる。
      *
-     * @param player    対象プレイヤー
-     * @param color     花火の色
-     * @param type      花火の型
+     * @param player 対象プレイヤー
+     * @param type   花火の型
+     * @param colors 花火の色（複数指定可）
      */
     private void spawnFirework(final Player player,
-                               final Color color,
-                               final FireworkEffect.Type type) {
+                               final FireworkEffect.Type type,
+                               final Color... colors) {
         final Firework fw = player.getWorld().spawn(
                 player.getLocation(), Firework.class);
         final FireworkMeta meta = fw.getFireworkMeta();
         meta.addEffect(FireworkEffect.builder()
-                .withColor(color)
+                .withColor(colors)
                 .withFade(Color.WHITE)
                 .with(type)
                 .trail(true)
@@ -1093,7 +1179,7 @@ public final class GachaPlugin extends JavaPlugin {
      * 指定の星ランクの演出だけを再生する（抽選なし・commands 非実行）。
      *
      * @param sender コマンド実行者
-     * @param stars  星数（1-5）
+     * @param stars  星数（1-6）
      */
     private void runPreview(final CommandSender sender, final int stars) {
         if (rolling) {
@@ -1113,32 +1199,42 @@ public final class GachaPlugin extends JavaPlugin {
                 + ") の演出を再生します。");
 
         // 第1段階: ランク表記
-        showInstantTitle(
-                Component.text(tier.rank)
-                        .color(tier.color)
-                        .decorate(TextDecoration.BOLD),
-                Component.text(starStr).color(NamedTextColor.YELLOW),
-                RANK_DISPLAY_MS);
+        if (tier.rainbow) {
+            showRainbowTitle(tier.rank, starStr,
+                    RANK_TO_WIN_DELAY_TICKS * MS_PER_TICK);
+        } else {
+            showInstantTitle(
+                    Component.text(tier.rank)
+                            .color(tier.color)
+                            .decorate(TextDecoration.BOLD),
+                    Component.text(starStr).color(NamedTextColor.YELLOW),
+                    RANK_DISPLAY_MS);
+        }
         playSoundForAll(Sound.BLOCK_NOTE_BLOCK_BELL,
                 1.0f, pitchByStars(tier.stars));
 
         // 第2段階: ダミー当選表示 + エフェクト
         Bukkit.getScheduler().runTaskLater(this, () -> {
-            final Component main = Component.text(
-                    "テスト演出")
-                    .color(tier.color)
-                    .decorate(TextDecoration.BOLD);
-            final Component sub = Component.text(starStr)
-                    .color(NamedTextColor.YELLOW);
-            final Title.Times times = Title.Times.times(
-                    Duration.ofMillis(WIN_FADE_IN_MS),
-                    Duration.ofMillis(WIN_STAY_MS),
-                    Duration.ofMillis(WIN_FADE_OUT_MS));
-            final Title title = Title.title(main, sub, times);
             final Sound ws = winSound(tier.stars);
-
+            if (tier.rainbow) {
+                showRainbowTitle("テスト演出", starStr, WIN_STAY_MS);
+            } else {
+                final Component main = Component.text(
+                        "テスト演出")
+                        .color(tier.color)
+                        .decorate(TextDecoration.BOLD);
+                final Component sub = Component.text(starStr)
+                        .color(NamedTextColor.YELLOW);
+                final Title.Times times = Title.Times.times(
+                        Duration.ofMillis(WIN_FADE_IN_MS),
+                        Duration.ofMillis(WIN_STAY_MS),
+                        Duration.ofMillis(WIN_FADE_OUT_MS));
+                final Title title = Title.title(main, sub, times);
+                for (final Player p : Bukkit.getOnlinePlayers()) {
+                    p.showTitle(title);
+                }
+            }
             for (final Player p : Bukkit.getOnlinePlayers()) {
-                p.showTitle(title);
                 p.playSound(p.getLocation(), ws, 1.0f, 1.0f);
             }
             playRarityEffect(tier.stars);
@@ -1151,7 +1247,8 @@ public final class GachaPlugin extends JavaPlugin {
     /**
      * config の rarity-tiers を読み込み、maxChance 昇順に並べて返す。
      *
-     * <p>未定義時はデフォルトの5段階（HR/SSR/SR/R/N）にフォールバックする。</p>
+     * <p>color に {@code RAINBOW} を指定したランクは虹色アニメ表示になる。
+     * 未定義時はデフォルトの6段階（UR/HR/SSR/SR/R/N）にフォールバックする。</p>
      *
      * @return Tier リスト（maxChance 昇順＝厳しい順）
      */
@@ -1162,9 +1259,11 @@ public final class GachaPlugin extends JavaPlugin {
                 final String rank = String.valueOf(m.get("rank"));
                 final double maxChance = toDouble(m.get("max-chance"), 100.0);
                 final int starN = (int) toDouble(m.get("stars"), 1.0);
-                final NamedTextColor color =
-                        colorByName(String.valueOf(m.get("color")));
-                tiers.add(new Tier(rank, maxChance, starN, color));
+                final String colorName = String.valueOf(m.get("color"));
+                final boolean rainbow =
+                        "rainbow".equalsIgnoreCase(colorName.trim());
+                final NamedTextColor color = colorByName(colorName);
+                tiers.add(new Tier(rank, maxChance, starN, color, rainbow));
             }
         } catch (final Exception e) {
             getLogger().warning(
@@ -1175,11 +1274,13 @@ public final class GachaPlugin extends JavaPlugin {
         }
 
         if (tiers.isEmpty()) {
-            tiers.add(new Tier("HR", 1.0, 5, NamedTextColor.GOLD));
-            tiers.add(new Tier("SSR", 5.0, 4, NamedTextColor.LIGHT_PURPLE));
-            tiers.add(new Tier("SR", 15.0, 3, NamedTextColor.AQUA));
-            tiers.add(new Tier("R", 40.0, 2, NamedTextColor.GREEN));
-            tiers.add(new Tier("N", 100.0, 1, NamedTextColor.GRAY));
+            tiers.add(new Tier("UR", 0.5, 6, NamedTextColor.WHITE, true));
+            tiers.add(new Tier("HR", 1.0, 5, NamedTextColor.GOLD, false));
+            tiers.add(new Tier("SSR", 5.0, 4,
+                    NamedTextColor.LIGHT_PURPLE, false));
+            tiers.add(new Tier("SR", 15.0, 3, NamedTextColor.AQUA, false));
+            tiers.add(new Tier("R", 40.0, 2, NamedTextColor.GREEN, false));
+            tiers.add(new Tier("N", 100.0, 1, NamedTextColor.GRAY, false));
         }
         tiers.sort(Comparator.comparingDouble(a -> a.maxChance));
         return tiers;
@@ -1258,6 +1359,92 @@ public final class GachaPlugin extends JavaPlugin {
         for (final Player p : Bukkit.getOnlinePlayers()) {
             p.showTitle(title);
         }
+    }
+
+    // ── 虹色（RAINBOW）表示ユーティリティ ──
+
+    /**
+     * 文字列を1文字ずつ色相をずらした虹色グラデーションの Component にする。
+     *
+     * @param text  対象文字列
+     * @param frame アニメフレーム番号（0 で静止画。増やすと色相が流れる）
+     * @param bold  太字にするかどうか
+     * @return 虹色グラデーションの Component
+     */
+    private Component rainbowText(final String text, final int frame,
+                                  final boolean bold) {
+        final TextComponent.Builder b = Component.text();
+        final float base = frame * RAINBOW_HUE_SHIFT_PER_FRAME;
+        for (int i = 0; i < text.length(); i++) {
+            final float hue =
+                    (base + i * RAINBOW_HUE_STEP) % 1.0f;
+            Component c = Component.text(String.valueOf(text.charAt(i)))
+                    .color(TextColor.color(HSVLike.hsvLike(
+                            hue, RAINBOW_SATURATION, RAINBOW_VALUE)));
+            if (bold) {
+                c = c.decorate(TextDecoration.BOLD);
+            }
+            b.append(c);
+        }
+        return b.build();
+    }
+
+    /**
+     * 虹色アニメーションのタイトルを全オンラインプレイヤーに表示する。
+     *
+     * <p>{@link #RAINBOW_FRAME_TICKS} tick ごとに色相をずらしたタイトルを
+     * 再送し、色が流れて見えるようにする。stayMs 経過で自動終了する。</p>
+     *
+     * @param mainText メインタイトル文字列（太字・虹色）
+     * @param subText  サブタイトル文字列（虹色）
+     * @param stayMs   合計表示時間（ミリ秒）
+     */
+    private void showRainbowTitle(final String mainText,
+                                  final String subText,
+                                  final long stayMs) {
+        rainbowFrame(mainText, subText, stayMs, 0);
+    }
+
+    /**
+     * 虹色アニメの1フレームを表示し、次フレームを予約する再帰処理。
+     *
+     * @param mainText メインタイトル文字列
+     * @param subText  サブタイトル文字列
+     * @param stayMs   合計表示時間（ミリ秒）
+     * @param frame    現在のフレーム番号
+     */
+    private void rainbowFrame(final String mainText,
+                              final String subText,
+                              final long stayMs,
+                              final int frame) {
+        final long elapsed = frame * RAINBOW_FRAME_TICKS * MS_PER_TICK;
+        if (elapsed >= stayMs) {
+            return;
+        }
+        final long remain = stayMs - elapsed;
+        showInstantTitle(
+                rainbowText(mainText, frame, true),
+                rainbowText(subText, frame, false),
+                Math.min(RAINBOW_FRAME_STAY_MS, remain));
+        Bukkit.getScheduler().runTaskLater(this,
+                () -> rainbowFrame(mainText, subText, stayMs, frame + 1),
+                RAINBOW_FRAME_TICKS);
+    }
+
+    /**
+     * 文字列を1文字ずつ虹色のレガシー§コードで着色する（チャット用）。
+     *
+     * @param text 対象文字列
+     * @return §コード付き虹色文字列
+     */
+    private String rainbowLegacy(final String text) {
+        final StringBuilder sb =
+                new StringBuilder(text.length() * (2 + 1));
+        for (int i = 0; i < text.length(); i++) {
+            sb.append(RAINBOW_LEGACY_CODES[i % RAINBOW_LEGACY_CODES.length])
+                    .append(text.charAt(i));
+        }
+        return sb.toString();
     }
 
     /**
