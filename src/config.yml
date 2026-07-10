@@ -29,20 +29,20 @@ messages:
 # レア度ランク（5段階）。各エントリの「当選確率(%)」から自動で決まります。
 #   当選確率 = そのエントリの weight ÷ プリセット内 weight 合計 × 100
 # 判定は max-chance（その確率%以下ならそのランク）。確率が低いほど高ランク。
-#   stars … 表示する⭐の数（N=1。3個=HR からレア感が出る並びにしています）
+#   stars … 表示する⭐の数（N=1。3個=SR からレア感が出る並びにしています）
 #   color … タイトル色（GOLD, LIGHT_PURPLE, AQUA, GREEN, GRAY, RED, YELLOW, WHITE 等）
-# 例) 当選確率0.5% → SSR(⭐5) / 3% → SR(⭐4) / 12% → HR(⭐3) / 30% → R(⭐2) / 70% → N(⭐1)
+# 例) 当選確率0.5% → HR(⭐5) / 3% → SSR(⭐4) / 12% → SR(⭐3) / 30% → R(⭐2) / 70% → N(⭐1)
 # -------------------------------------------------------------------
 rarity-tiers:
-  - rank: "SSR"
-    max-chance: 1.0      # 1%以下
+  - rank: "HR"
+    max-chance: 1.0      # 1%以下（最高レア）
     stars: 5
     color: "GOLD"
-  - rank: "SR"
+  - rank: "SSR"
     max-chance: 5.0      # 5%以下
     stars: 4
     color: "LIGHT_PURPLE"
-  - rank: "HR"
+  - rank: "SR"
     max-chance: 15.0     # 15%以下
     stars: 3
     color: "AQUA"
@@ -86,13 +86,13 @@ presets:
     entries:
       diamond:                     # ← 任意のキー（例: diamond）。一意ならOK
         name: "ダイヤ大当たり"
-        weight: 3.0                # 合計138なので約2.2% → SR想定
+        weight: 3.0                # 合計138なので約2.2% → SSR想定
         commands:
           - "give %player% diamond 3"
           - "title %player% title {\"text\":\"大当たり!\",\"color\":\"gold\"}"
       iron:
         name: "鉄セット"
-        weight: 15.0               # 約10.9% → HR想定
+        weight: 15.0               # 約10.9% → SR想定
         commands:
           - "give %player% iron_ingot 8"
       apple:

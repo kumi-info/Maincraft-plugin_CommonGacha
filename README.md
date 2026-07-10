@@ -125,6 +125,7 @@ presets:
 
 | バージョン | 変更点 |
 |---|---|
+| v1.7.1 | **レア度順序を修正**：HR を最高レアに（低い方から N → R → SR → SSR → HR）。v1.7.0 までは config.yml 既定値と Java フォールバックが SSR 最上位のままで、本 README のレア度表と食い違っていた。既存サーバーは `plugins/CommonGacha/config.yml` の `rarity-tiers` を手動更新（または削除して再生成）→ `/gacha reload` が必要。 |
 | v1.7.0 | **連鎖ガチャ（`chain`）機能追加**：エントリに `chain: '<presetId>'` で当選後に次のプリセットを自動連続抽選（`animation.chain-delay-seconds`・既定3秒、`%player%` 引き継ぎ、最大20段で無限ループ防止）。同梱プリセット **`baibai1`〜`baibai5`（WINの倍々ガチャ：−1→−2→−4→−8→−16WIN）** 追加。 |
 | v1.6.0 | スロット回転中の**星（⭐）をレア度色で表示**。当選／テスト演出のサブタイトルから **`[HR]` 等のランク表記を削除**（星のみ表示に）。 |
 | v1.2.0 | 抽選開始前に**ガチャ名タイトル表示**（`animation.name-title-seconds`・既定3秒）追加。 |

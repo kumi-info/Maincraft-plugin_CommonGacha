@@ -1151,7 +1151,7 @@ public final class GachaPlugin extends JavaPlugin {
     /**
      * config の rarity-tiers を読み込み、maxChance 昇順に並べて返す。
      *
-     * <p>未定義時はデフォルトの5段階（SSR/SR/HR/R/N）にフォールバックする。</p>
+     * <p>未定義時はデフォルトの5段階（HR/SSR/SR/R/N）にフォールバックする。</p>
      *
      * @return Tier リスト（maxChance 昇順＝厳しい順）
      */
@@ -1175,9 +1175,9 @@ public final class GachaPlugin extends JavaPlugin {
         }
 
         if (tiers.isEmpty()) {
-            tiers.add(new Tier("SSR", 1.0, 5, NamedTextColor.GOLD));
-            tiers.add(new Tier("SR", 5.0, 4, NamedTextColor.LIGHT_PURPLE));
-            tiers.add(new Tier("HR", 15.0, 3, NamedTextColor.AQUA));
+            tiers.add(new Tier("HR", 1.0, 5, NamedTextColor.GOLD));
+            tiers.add(new Tier("SSR", 5.0, 4, NamedTextColor.LIGHT_PURPLE));
+            tiers.add(new Tier("SR", 15.0, 3, NamedTextColor.AQUA));
             tiers.add(new Tier("R", 40.0, 2, NamedTextColor.GREEN));
             tiers.add(new Tier("N", 100.0, 1, NamedTextColor.GRAY));
         }
