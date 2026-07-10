@@ -1,6 +1,6 @@
 # Gacha
 
-**バージョン: v1.5.0**
+**バージョン: v1.6.0**
 
 プリセットを重み付き抽選し、当選結果に応じた**コンソールコマンドを実行**する汎用ガチャプラグインです。TikTok 妨害配信で、視聴者の操作（ギフト等）に応じて妨害／救済イベントを抽選する用途で作成しています。
 
@@ -11,9 +11,9 @@
 `/gacha preset <id>` を実行すると、次の順で演出が進みます。
 
 0. **ガチャ名表示**（`animation.name-title-seconds` 秒・既定2秒）… `presets.<id>.name` をタイトル表示し、何のガチャか分かるようにする（サブタイトルなし）。色は `animation.name-title-color`（preset 個別は `presets.<id>.name-color`）で変更可。
-1. **スロット風アニメ**（`animation.roll-seconds` 秒）… 候補をランダムに高速表示し、終端で減速。
+1. **スロット風アニメ**（`animation.roll-seconds` 秒）… 候補をランダムに高速表示し、終端で減速。星（⭐）もレア度色で表示。
 2. **レア度ランク表示**（SSR 等を大きく表示）。
-3. **当選内容表示** ＋ 全体アナウンス ＋ **commands 実行**。
+3. **当選内容表示**（サブタイトルは星のみ・`[HR]` 等のランク表記なし）＋ 全体アナウンス ＋ **commands 実行**。
 
 レア度は**当選確率から自動判定**されます（エントリ側に rarity は書きません）。確率 = `そのエントリの weight ÷ プリセット内 weight 合計 × 100`。
 
@@ -60,7 +60,7 @@ animation:
   # ※ presets.<id>.name-color で preset ごとに色を上書き可
 
 messages:
-  win: "§6[ガチャ] §f%player% §6は §e[%rank%] %name% %stars% §6を引き当てた！"
+  win: "§6[ガチャ] §f%player% §6は §e%name% %stars% §6を引き当てた！"
 
 rarity-tiers:             # 5段階（rank / max-chance / stars / color）
   - { rank: "HR",  max-chance: 1.0,   stars: 5, color: "GOLD" }
@@ -102,6 +102,7 @@ presets:
 
 | バージョン | 変更点 |
 |---|---|
+| v1.6.0 | スロット回転中の**星（⭐）をレア度色で表示**。当選／テスト演出のサブタイトルから **`[HR]` 等のランク表記を削除**（星のみ表示に）。 |
 | v1.2.0 | 抽選開始前に**ガチャ名タイトル表示**（`animation.name-title-seconds`・既定3秒）追加。 |
 | v1.3.0 | ガチャ名タイトルの既定表示秒数を 3→**2秒**に変更。**色を config 化**（`animation.name-title-color`／`name-title-sub-color`、preset 個別 `presets.<id>.name-color`）。 |
 | v1.4.0 | ガチャ名タイトルの**サブタイトル（「ガチャ抽選」）を廃止**。`name-title-sub-color` 設定も削除。 |

@@ -22,7 +22,7 @@ animation:
 #   %player% … 実行者名 / %name% … 当選名 / %rank% … ランク(SSR等) / %stars% … ⭐文字列
 #   %presets%(=%preset%) … ガチャ名（presets.<id>.name。例: タイマーガチャ）
 messages:
-  win: "§6[%presets%] §e[%rank%] %name% §6を当選"
+  win: "§6[%presets%] §e%name% §6を当選"
 
 # -------------------------------------------------------------------
 # レア度ランク（5段階）。各エントリの「当選確率(%)」から自動で決まります。

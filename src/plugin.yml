@@ -1,5 +1,5 @@
 name: CommonGacha
-version: '1.5.0'
+version: '1.6.0'
 main: com.liverecord.gacha.GachaPlugin
 api-version: '1.21'
 author: LiveRecord
