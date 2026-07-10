@@ -13,6 +13,7 @@
 animation:
   roll-seconds: 3            # スロット回転の秒数（0 でアニメ無し・即ランク→中身表示）
   name-title-seconds: 2      # 抽選開始前にガチャ名を表示する秒数（0 で表示しない）
+  chain-delay-seconds: 3     # 連鎖(chain)当選から次のガチャ開始までの秒数（当選表示を読む時間）
   name-title-color: gold     # ガチャ名タイトルの色。下記カラー名から指定。
   # 使えるカラー名: black, dark_blue, dark_green, dark_aqua, dark_red, dark_purple,
   #   gold, gray, dark_gray, blue, green, aqua, red, light_purple, yellow, white
@@ -69,6 +70,15 @@ rarity-tiers:
 #             - "give %player% apple 5"   ← %player% は実行者名に置換される
 #
 #   ※ レア度(rank/⭐)は weight から自動算出されるので、エントリ側に rarity は不要です。
+#
+# ★連鎖ガチャ（倍々ガチャ等）:
+#   エントリに chain: '<プリセットID>' を書くと、そのエントリの当選後に
+#   指定プリセットを自動で連続抽選します（animation.chain-delay-seconds 秒後）。
+#     - %player% は連鎖先にもそのまま引き継がれる
+#     - 連鎖は最大20段で自動停止（chain がループしていても無限には回らない）
+#   例) 下の baibai1〜baibai5 = 「WINの倍々ガチャ」
+#       倍々が出るたび baibai1→2→3→4→5 と進み、-1 → -2 → -4 → -8 → -16WIN と倍増。
+#       最終段(baibai5)には chain がないので -16WIN が上限。
 # -------------------------------------------------------------------
 presets:
   '1':
@@ -93,5 +103,97 @@ presets:
       nothing:
         name: "はずれ"
         weight: 90.0               # 約65.2% → N想定
+        commands:
+          - "title %player% actionbar {\"text\":\"はずれ...\",\"color\":\"gray\"}"
+
+  # ---------------- WINの倍々ガチャ（連鎖デモ） ----------------
+  # /gacha preset baibai1 で開始。「倍々」が出るたび次の段へ進み
+  # マイナス幅が倍増（-1 → -2 → -4 → -8 → -16WIN）。-16WIN が上限。
+  # WIN の増減は CommonWIN プラグインの /win sub を使用。
+  # weight は各段共通: 当たり40 / はずれ40 / 倍々20（%表示は自動計算）
+  baibai1:
+    name: "WINの倍々ガチャ"
+    name-color: red
+    entries:
+      lose:
+        name: "－1WIN"
+        weight: 40.0
+        commands:
+          - "win sub 1"
+      miss:
+        name: "はずれ"
+        weight: 40.0
+        commands:
+          - "title %player% actionbar {\"text\":\"はずれ...\",\"color\":\"gray\"}"
+      double:
+        name: "倍々!!"
+        weight: 20.0
+        chain: 'baibai2'           # ← 当選後 baibai2 を自動抽選
+  baibai2:
+    name: "WINの倍々ガチャ ×2"
+    name-color: red
+    entries:
+      lose:
+        name: "－2WIN"
+        weight: 40.0
+        commands:
+          - "win sub 2"
+      miss:
+        name: "はずれ"
+        weight: 40.0
+        commands:
+          - "title %player% actionbar {\"text\":\"はずれ...\",\"color\":\"gray\"}"
+      double:
+        name: "倍々!!"
+        weight: 20.0
+        chain: 'baibai3'
+  baibai3:
+    name: "WINの倍々ガチャ ×4"
+    name-color: red
+    entries:
+      lose:
+        name: "－4WIN"
+        weight: 40.0
+        commands:
+          - "win sub 4"
+      miss:
+        name: "はずれ"
+        weight: 40.0
+        commands:
+          - "title %player% actionbar {\"text\":\"はずれ...\",\"color\":\"gray\"}"
+      double:
+        name: "倍々!!"
+        weight: 20.0
+        chain: 'baibai4'
+  baibai4:
+    name: "WINの倍々ガチャ ×8"
+    name-color: red
+    entries:
+      lose:
+        name: "－8WIN"
+        weight: 40.0
+        commands:
+          - "win sub 8"
+      miss:
+        name: "はずれ"
+        weight: 40.0
+        commands:
+          - "title %player% actionbar {\"text\":\"はずれ...\",\"color\":\"gray\"}"
+      double:
+        name: "倍々!!"
+        weight: 20.0
+        chain: 'baibai5'
+  baibai5:                         # 最終段: chain なし＝-16WIN が上限
+    name: "WINの倍々ガチャ ×16 (MAX)"
+    name-color: dark_red
+    entries:
+      lose:
+        name: "－16WIN"
+        weight: 50.0
+        commands:
+          - "win sub 16"
+      miss:
+        name: "はずれ"
+        weight: 50.0
         commands:
           - "title %player% actionbar {\"text\":\"はずれ...\",\"color\":\"gray\"}"

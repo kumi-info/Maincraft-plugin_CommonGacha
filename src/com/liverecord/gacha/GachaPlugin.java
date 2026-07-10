@@ -42,7 +42,10 @@ import org.bukkit.plugin.java.JavaPlugin;
  *
  * <p>レア度（ランク）は各エントリの当選確率から自動判定する（config の rarity-tiers）。</p>
  *
- * @version 1.6.0
+ * <p>エントリに {@code chain: '<presetId>'} を書くと、当選後に指定プリセットを
+ * 自動で連続抽選する（倍々ガチャ等の多段演出用）。</p>
+ *
+ * @version 1.7.0
  * @author LiveRecord
  */
 public final class GachaPlugin extends JavaPlugin {
@@ -183,8 +186,17 @@ public final class GachaPlugin extends JavaPlugin {
         }
     }
 
+    /** 連鎖（chain）の最大段数。config ミスによる無限ループ防止。 */
+    private static final int MAX_CHAIN_DEPTH = 20;
+
+    /** 連鎖抽選開始までの既定ディレイ（秒）。当選タイトルを読み切れる長さ。 */
+    private static final int DEFAULT_CHAIN_DELAY_SECONDS = 3;
+
     /** ガチャ演出中フラグ。true の間は新たなガチャ実行をブロックする。 */
     private volatile boolean rolling = false;
+
+    /** 現在の連鎖段数。コマンドからの抽選開始で 0 に戻る。 */
+    private int chainDepth = 0;
 
     /**
      * プラグイン有効化時の初期化処理。
@@ -516,7 +528,7 @@ public final class GachaPlugin extends JavaPlugin {
      * @param presetId プリセットID
      */
     private void rollGacha(final CommandSender sender, final String presetId) {
-        rollGacha(sender, presetId, null);
+        rollGacha(sender, presetId, null, null);
     }
 
     /**
@@ -532,6 +544,25 @@ public final class GachaPlugin extends JavaPlugin {
     private void rollGacha(final CommandSender sender,
                            final String presetId,
                            final String forcedKey) {
+        rollGacha(sender, presetId, forcedKey, null);
+    }
+
+    /**
+     * プリセットを抽選して演出する（実行者名の引き継ぎ対応）。
+     *
+     * <p>{@code chainPlayerName} が非 null の場合は連鎖（chain）による内部呼び出しで、
+     * 元の実行者名を %player% 置換に引き継ぐ。null の場合はコマンドからの
+     * 新規抽選として連鎖段数をリセットする。</p>
+     *
+     * @param sender          コマンド実行者
+     * @param presetId        プリセットID
+     * @param forcedKey       確定当選させるエントリキー（null で通常抽選）
+     * @param chainPlayerName 連鎖時に引き継ぐ実行者名（null で sender から取得）
+     */
+    private void rollGacha(final CommandSender sender,
+                           final String presetId,
+                           final String forcedKey,
+                           final String chainPlayerName) {
         if (rolling) {
             sender.sendMessage(
                     "§eガチャ実行中です。"
@@ -571,9 +602,15 @@ public final class GachaPlugin extends JavaPlugin {
             return;
         }
 
-        final String playerName = (sender instanceof Player)
-                ? sender.getName()
-                : "CONSOLE";
+        if (chainPlayerName == null) {
+            // コマンドからの新規抽選 → 連鎖段数をリセット
+            chainDepth = 0;
+        }
+        final String playerName = (chainPlayerName != null)
+                ? chainPlayerName
+                : (sender instanceof Player)
+                        ? sender.getName()
+                        : "CONSOLE";
         final List<Tier> tiers = loadTiers();
         final int rollSeconds =
                 getConfig().getInt("animation.roll-seconds", 3);
@@ -881,7 +918,54 @@ public final class GachaPlugin extends JavaPlugin {
                 playerName, starStr);
         executeCommands(won, playerName);
 
+        final String chainId = won.getString("chain", "").trim();
+        if (!chainId.isEmpty()) {
+            scheduleChain(chainId, playerName);
+            return;  // rolling フラグは連鎖側で管理する
+        }
+
         rolling = false;
+    }
+
+    /**
+     * 連鎖（chain）抽選を予約する。
+     *
+     * <p>当選タイトルを読み切れるよう {@code animation.chain-delay-seconds} 秒
+     * （既定 {@value #DEFAULT_CHAIN_DELAY_SECONDS} 秒）待ってから、
+     * 指定プリセットをコンソール実行で連続抽選する。実行者名は引き継ぐ。</p>
+     *
+     * <p>連鎖先プリセットが存在しない場合や、連鎖段数が
+     * {@value #MAX_CHAIN_DEPTH} を超えた場合（config ミスによる
+     * 無限ループ防止）は警告ログを出して連鎖を打ち切る。</p>
+     *
+     * @param chainId    連鎖先プリセットID
+     * @param playerName 引き継ぐ実行者名
+     */
+    private void scheduleChain(final String chainId, final String playerName) {
+        if (chainDepth >= MAX_CHAIN_DEPTH) {
+            getLogger().warning("[gacha] 連鎖が " + MAX_CHAIN_DEPTH
+                    + " 段を超えたため打ち切りました"
+                    + "（config の chain 設定がループしていないか確認）。");
+            rolling = false;
+            return;
+        }
+        if (getConfig().getConfigurationSection("presets." + chainId) == null) {
+            getLogger().warning("[gacha] 連鎖先プリセット '" + chainId
+                    + "' が見つかりません。連鎖を中止します。");
+            rolling = false;
+            return;
+        }
+
+        final int delaySecs = Math.max(0, getConfig().getInt(
+                "animation.chain-delay-seconds", DEFAULT_CHAIN_DELAY_SECONDS));
+        chainDepth++;
+        getLogger().info("[gacha] 連鎖抽選 → preset=" + chainId
+                + " (" + delaySecs + "秒後・" + chainDepth + "段目)");
+
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            rolling = false;  // rollGacha 内で再度 true になる
+            rollGacha(Bukkit.getConsoleSender(), chainId, null, playerName);
+        }, delaySecs * TICKS_PER_SECOND);
     }
 
     /**
